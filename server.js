@@ -3,6 +3,8 @@ const multer = require('multer');
 const fs = require('fs');
 const cors = require('cors');
 const STLReader = require('stl-reader');
+const STLParser = require('stl-parser');
+const geometry = STLParser(stlBuffer);
 
 const app = express();
 const port = process.env.PORT || 3000;
