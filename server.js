@@ -25,6 +25,8 @@ const upload = multer({
 
 // Endpoint to handle STL file uploads
 app.post('/analyze-stl', upload.single('file'), (req, res) => {
+  console.log('File Metadata:', req.file);
+
   if (!req.file) {
     console.error('Error: No file uploaded.');
     return res.status(400).json({
@@ -36,7 +38,6 @@ app.post('/analyze-stl', upload.single('file'), (req, res) => {
   const filePath = req.file.path;
 
   try {
-    // Validate the file extension (STL)
     const fileExtension = req.file.originalname.split('.').pop().toLowerCase();
     if (fileExtension !== 'stl') {
       console.error('Error: Uploaded file is not an STL file.');
@@ -51,19 +52,26 @@ app.post('/analyze-stl', upload.single('file'), (req, res) => {
 
     // Read the STL file
     const stlBuffer = fs.readFileSync(filePath);
-    console.log('STL Buffer Length:', stlBuffer.length); // Log the buffer size for debugging
+    console.log('STL Buffer Length:', stlBuffer.length);
 
     // Parse the STL file
-    const geometry = STLReader.parse(stlBuffer);
+    let geometry;
+    try {
+      geometry = STLReader.parse(stlBuffer);
+    } catch (parseError) {
+      console.error('Parsing Error:', parseError.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to parse the STL file. Ensure it is a valid STL file.',
+      });
+    }
+
     console.log(`STL file successfully parsed. Number of triangles: ${geometry.faces.length}`);
 
     // Calculate the estimated grams of material and cost
-    const numTriangles = geometry.faces.length; // Number of triangles
+    const numTriangles = geometry.faces.length;
     const estimatedGrams = numTriangles * 0.1; // Example: 0.1 gram per triangle
     const estimatedCost = estimatedGrams * 0.02; // Example: $0.02 per gram
-
-    // Clean up the uploaded file
-    fs.unlinkSync(filePath);
 
     // Send the response
     res.json({
@@ -71,13 +79,14 @@ app.post('/analyze-stl', upload.single('file'), (req, res) => {
       grams: estimatedGrams.toFixed(2),
       cost: estimatedCost.toFixed(2),
     });
-  } catch (error) {
-    console.error('Error processing STL file:', error.stack); // Log the full error stack for debugging
 
-    // Send error response
+    // Clean up the uploaded file
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    console.error('Processing Error:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'Failed to analyze the STL file. Please try again.',
+      message: 'An unexpected error occurred while processing the STL file. Please try again.',
     });
   }
 });
