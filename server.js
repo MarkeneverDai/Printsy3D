@@ -51,10 +51,10 @@ app.post('/analyze-stl', upload.single('file'), (req, res) => {
 
     // Read the STL file
     const stlBuffer = fs.readFileSync(filePath);
+    console.log('STL Buffer Length:', stlBuffer.length); // Log the buffer size for debugging
 
     // Parse the STL file
     const geometry = STLReader.parse(stlBuffer);
-
     console.log(`STL file successfully parsed. Number of triangles: ${geometry.faces.length}`);
 
     // Calculate the estimated grams of material and cost
@@ -65,13 +65,14 @@ app.post('/analyze-stl', upload.single('file'), (req, res) => {
     // Clean up the uploaded file
     fs.unlinkSync(filePath);
 
+    // Send the response
     res.json({
       success: true,
       grams: estimatedGrams.toFixed(2),
       cost: estimatedCost.toFixed(2),
     });
   } catch (error) {
-    console.error('Error processing STL file:', error.message);
+    console.error('Error processing STL file:', error.stack); // Log the full error stack for debugging
 
     // Send error response
     res.status(500).json({
