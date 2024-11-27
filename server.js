@@ -3,8 +3,6 @@ const multer = require('multer');
 const fs = require('fs');
 const cors = require('cors');
 const STLReader = require('stl-reader');
-const STLParser = require('stl-parser');
-const geometry = STLParser(stlBuffer);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -29,6 +27,7 @@ const upload = multer({
 app.post('/analyze-stl', upload.single('file'), (req, res) => {
   console.log('File Metadata:', req.file);
 
+  // Check if file was uploaded
   if (!req.file) {
     console.error('Error: No file uploaded.');
     return res.status(400).json({
@@ -40,6 +39,7 @@ app.post('/analyze-stl', upload.single('file'), (req, res) => {
   const filePath = req.file.path;
 
   try {
+    // Validate the file extension
     const fileExtension = req.file.originalname.split('.').pop().toLowerCase();
     if (fileExtension !== 'stl') {
       console.error('Error: Uploaded file is not an STL file.');
@@ -85,7 +85,7 @@ app.post('/analyze-stl', upload.single('file'), (req, res) => {
     // Clean up the uploaded file
     fs.unlinkSync(filePath);
   } catch (error) {
-    console.error('Processing Error:', error.stack);
+    console.error('Processing Error:', error.message);
     res.status(500).json({
       success: false,
       message: 'An unexpected error occurred while processing the STL file. Please try again.',
