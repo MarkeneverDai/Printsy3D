@@ -1,20 +1,15 @@
 const express = require('express');
 const multer = require('multer');
-const cors = require('cors');
 const fs = require('fs');
-const path = require('path');
+const cors = require('cors'); // For Shopify frontend requests
 const app = express();
-const port = process.env.PORT || 3000;
+const port = 3000;
+
+// Allow cross-origin requests for Shopify frontend
+app.use(cors());
 
 // Set the price per gram (in cents)
 const pricePerGram = 5; // Adjust this value as needed
-
-// Configure CORS
-app.use(cors({
-  origin: 'https://72a1-98-97-142-140.ngrok-free.app', // Replace with your ngrok URL
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type'],
-}));
 
 // Configure multer for file uploads
 const upload = multer({
@@ -24,7 +19,8 @@ const upload = multer({
 
 // Parse binary STL and calculate volume
 function calculateSTLVolume(buffer) {
-  const triangleCount = buffer.readUInt32LE(80); // Number of triangles in STL
+  const header = buffer.slice(0, 80); // 80-byte header
+  const triangleCount = buffer.readUInt32LE(80); // Number of triangles
   let volume = 0;
 
   const triangleSize = 50; // Each triangle is 50 bytes
@@ -60,64 +56,54 @@ function calculateSTLVolume(buffer) {
     volume += tetraVolume;
   }
 
-  return Math.abs(volume) / 1000; // Return absolute volume in cm³
+  return Math.abs(volume) / 1000; // Return absolute value of the volume in cm³
 }
 
-// Calculate filament usage
-function calculateFilamentUsage(volume, infillDensity, wallThickness, filamentDensity) {
+// Calculate filament usage and price
+function calculateFilamentUsage(volume, infillDensity, wallThickness, topBottomThickness, filamentDensity, layerHeight) {
   const infillVolume = volume * (infillDensity / 100);
-  const wallVolume = wallThickness * (volume ** (2 / 3)); // Approximate wall volume
-  const totalVolume = infillVolume + wallVolume;
-
-  const totalWeight = totalVolume * filamentDensity; // Total filament weight in grams
-
-  return totalWeight;
+  const totalVolume = infillVolume + wallThickness + topBottomThickness; // Simplified calculation
+  const totalWeight = totalVolume * filamentDensity; // Weight in grams
+  const priceInCents = totalWeight * pricePerGram;
+  return (priceInCents / 100).toFixed(2); // Price in dollars
 }
 
-// Handle file upload and calculate price
-app.post('/api/upload', upload.single('file'), (req, res) => {
+// Handle file upload and calculation
+app.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
   const filePath = req.file.path;
-  const infillDensity = parseFloat(req.body.infill || 15); // Default 15% infill
-  const filamentDensity = parseFloat(req.body.material || 1.24); // Default PLA (1.24 g/cm³)
-  const wallThickness = 2 * 0.4; // Default: 2 wall loops with 0.4 mm nozzle
+  const infillDensity = parseFloat(req.body.infill);
+  const filamentDensity = parseFloat(req.body.material);
+  const topBottomThickness = parseFloat(req.body.layers);
+  const wallThickness = 2 * 0.4; // 2 wall loops with 0.4 mm nozzle diameter
+  const layerHeight = 0.2; // Layer height in mm
 
   try {
-    // Read STL file
     const buffer = fs.readFileSync(filePath);
-    const volume = calculateSTLVolume(buffer); // STL volume in cm³
+    const volume = calculateSTLVolume(buffer);
 
-    const totalWeight = calculateFilamentUsage(volume, infillDensity, wallThickness, filamentDensity);
+    const price = calculateFilamentUsage(
+      volume,
+      infillDensity,
+      wallThickness,
+      topBottomThickness,
+      filamentDensity,
+      layerHeight
+    );
 
-    // Calculate price based on filament weight
-    const priceInCents = totalWeight * pricePerGram;
-    const priceInDollars = (priceInCents / 100).toFixed(2); // Convert to dollars
+    fs.unlinkSync(filePath); // Clean up uploaded file
 
-    // Respond with only the price
-    res.json({ price: `$${priceInDollars}` });
-
-    // Clean up uploaded file
-    fs.unlinkSync(filePath);
+    res.json({
+      success: true,
+      price: price,
+    });
   } catch (error) {
     console.error('Error processing STL file:', error.message);
     res.status(500).json({ error: 'Failed to process the STL file.' });
   }
-});
-
-// Serve frontend (optional)
-app.get('/', (req, res) => {
-  res.send(`
-    <h1>STL Filament Cost Calculator</h1>
-    <p>Send a POST request to <code>/api/upload</code> with:</p>
-    <ul>
-      <li><strong>file:</strong> STL file (binary, required)</li>
-      <li><strong>infill:</strong> Infill density (%) [default: 15]</li>
-      <li><strong>material:</strong> Filament density (g/cm³) [default: PLA (1.24)]</li>
-    </ul>
-  `);
 });
 
 // Start server
