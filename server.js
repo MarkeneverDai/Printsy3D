@@ -1,11 +1,12 @@
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
+const path = require('path');
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Set the price per gram (in cents)
-const pricePerGram = 5; // Adjust this value as needed (e.g., 5 cents per gram)
+const pricePerGram = 5; // Adjust this value as needed
 
 // Configure multer for file uploads
 const upload = multer({
@@ -13,32 +14,9 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
 });
 
-// Serve upload form
-app.get('/', (req, res) => {
-  res.send(`
-    <h1>Upload STL File to Calculate Filament Usage</h1>
-    <form action="/upload" method="post" enctype="multipart/form-data">
-      <label for="file">Select STL File:</label>
-      <input type="file" name="file" id="file" accept=".stl" required>
-      <label for="infill">Infill Density (%):</label>
-      <input type="number" name="infill" id="infill" min="0" max="100" value="15" required>
-      <label for="layers">Top/Bottom Layers (mm):</label>
-      <input type="number" name="layers" id="layers" step="0.1" value="1.0" required>
-      <label for="material">Filament Type:</label>
-      <select name="material" id="material" required>
-        <option value="1.24">PLA (1.24 g/cm³)</option>
-        <option value="1.04">ABS (1.04 g/cm³)</option>
-        <option value="1.27">PETG (1.27 g/cm³)</option>
-      </select>
-      <button type="submit">Calculate</button>
-    </form>
-  `);
-});
-
 // Parse binary STL and calculate volume
 function calculateSTLVolume(buffer) {
-  const header = buffer.slice(0, 80); // 80-byte header
-  const triangleCount = buffer.readUInt32LE(80); // Number of triangles
+  const triangleCount = buffer.readUInt32LE(80); // Number of triangles in STL
   let volume = 0;
 
   const triangleSize = 50; // Each triangle is 50 bytes
@@ -74,60 +52,37 @@ function calculateSTLVolume(buffer) {
     volume += tetraVolume;
   }
 
-  return Math.abs(volume) / 1000; // Return absolute value of the volume in cm³
+  return Math.abs(volume) / 1000; // Return absolute volume in cm³
 }
 
 // Calculate filament usage
 function calculateFilamentUsage(volume, infillDensity, wallThickness, topBottomThickness, filamentDensity, layerHeight) {
-  // Approximate base area using the cube root of volume
-  const footprintArea = Math.cbrt(volume * 6); // Simplified approximation for footprint area in cm²
-
-  // Outer Top/Bottom Surface Volume (single layer of 0.2mm)
-  const outerTopBottomVolume = (footprintArea * layerHeight) / 10; // in cm³
-
-  // Internal Solid Infill Volume under Top/Bottom Surfaces (2 layers × 0.2mm)
-  const internalTopBottomVolume = (footprintArea * 2 * layerHeight) / 10; // 2 solid infill layers
-
-  // Total Top/Bottom Volume
-  const totalTopBottomVolume = outerTopBottomVolume + internalTopBottomVolume;
-
-  // Wall Volume (solid walls approximation)
-  const wallVolume = wallThickness * (volume ** (2 / 3)); // Approximate wall surface area
-
-  // Infill Volume
   const infillVolume = volume * (infillDensity / 100);
+  const wallVolume = wallThickness * (volume ** (2 / 3)); // Approximate wall volume
+  const totalVolume = infillVolume + wallVolume;
 
-  // Total Volume and Filament Weight
-  const totalVolume = wallVolume + totalTopBottomVolume + infillVolume;
-  const wallWeight = wallVolume * filamentDensity;
-  const topBottomWeight = totalTopBottomVolume * filamentDensity;
-  const infillWeight = infillVolume * filamentDensity;
-  const totalWeight = totalVolume * filamentDensity;
+  const totalWeight = totalVolume * filamentDensity; // Total filament weight in grams
 
   return {
-    wallVolume,
-    wallWeight,
-    totalTopBottomVolume,
-    topBottomWeight,
     infillVolume,
-    infillWeight,
+    wallVolume,
     totalVolume,
     totalWeight,
   };
 }
 
-// Handle file upload and calculation
-app.post('/upload', upload.single('file'), (req, res) => {
+// Handle file upload and calculation (via Postman or third-party)
+app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
-    return res.status(400).send('No file uploaded.');
+    return res.status(400).json({ error: 'No file uploaded.' });
   }
 
   const filePath = req.file.path;
-  const infillDensity = parseFloat(req.body.infill);
-  const filamentDensity = parseFloat(req.body.material); // Density from dropdown
-  const topBottomThickness = parseFloat(req.body.layers); // Top/Bottom layer thickness in mm
-  const wallThickness = 2 * 0.4; // 2 wall loops with 0.4 mm nozzle diameter
-  const layerHeight = 0.2; // Layer height in mm
+  const infillDensity = parseFloat(req.body.infill || 15);
+  const filamentDensity = parseFloat(req.body.material || 1.24); // Default: PLA (1.24 g/cm³)
+  const topBottomThickness = parseFloat(req.body.layers || 1.0); // Top/Bottom layer thickness in mm
+  const wallThickness = 2 * 0.4; // Default: 2 wall loops with 0.4 mm nozzle
+  const layerHeight = 0.2; // Default layer height in mm
 
   try {
     // Read STL file
@@ -135,39 +90,48 @@ app.post('/upload', upload.single('file'), (req, res) => {
     const volume = calculateSTLVolume(buffer); // STL volume in cm³
 
     const {
-      wallVolume,
-      wallWeight,
-      totalTopBottomVolume,
-      topBottomWeight,
       infillVolume,
-      infillWeight,
+      wallVolume,
       totalVolume,
       totalWeight,
     } = calculateFilamentUsage(volume, infillDensity, wallThickness, topBottomThickness, filamentDensity, layerHeight);
 
     // Calculate price based on filament weight
-    const priceInCents = totalWeight * pricePerGram; // Price in cents
+    const priceInCents = totalWeight * pricePerGram;
     const priceInDollars = (priceInCents / 100).toFixed(2); // Convert to dollars
 
-    // Send the result
-    res.send(`
-      <h1>Filament Usage Calculation</h1>
-      <p><strong>STL Volume:</strong> ${volume.toFixed(2)} cm³</p>
-      <p><strong>Wall Volume:</strong> ${wallVolume.toFixed(2)} cm³ (Filament: ${wallWeight.toFixed(2)} g)</p>
-      <p><strong>Top/Bottom Layer Volume:</strong> ${totalTopBottomVolume.toFixed(2)} cm³ (Filament: ${topBottomWeight.toFixed(2)} g)</p>
-      <p><strong>Infill Volume:</strong> ${infillVolume.toFixed(2)} cm³ (Filament: ${infillWeight.toFixed(2)} g)</p>
-      <p><strong>Total Filament Volume:</strong> ${totalVolume.toFixed(2)} cm³</p>
-      <p><strong>Filament Usage:</strong> ${totalWeight.toFixed(2)} g</p>
-      <p><strong>Total Cost:</strong> $${priceInDollars}</p>
-      <a href="/">Upload Another File</a>
-    `);
+    // Respond with JSON (for API consumers)
+    res.json({
+      stlVolume: volume.toFixed(2),
+      infillVolume: infillVolume.toFixed(2),
+      wallVolume: wallVolume.toFixed(2),
+      totalVolume: totalVolume.toFixed(2),
+      totalWeight: totalWeight.toFixed(2),
+      price: `$${priceInDollars}`,
+    });
 
     // Clean up uploaded file
     fs.unlinkSync(filePath);
   } catch (error) {
     console.error('Error processing STL file:', error.message);
-    res.status(500).send('Failed to process the STL file.');
+    res.status(500).json({ error: 'Failed to process the STL file.' });
   }
+});
+
+// Serve frontend (optional for Shopify-like form handling)
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>STL Filament Calculator API</h1>
+    <p>This API calculates the filament cost based on STL file uploads.</p>
+    <p>Use <code>POST /api/upload</code> with the following parameters:</p>
+    <ul>
+      <li><strong>file:</strong> STL file (binary, required)</li>
+      <li><strong>infill:</strong> Infill density (%) [default: 15]</li>
+      <li><strong>material:</strong> Filament density (g/cm³) [default: PLA (1.24)]</li>
+      <li><strong>layers:</strong> Top/Bottom thickness (mm) [default: 1.0]</li>
+    </ul>
+    <p>Send these parameters via Postman or any HTTP client to test.</p>
+  `);
 });
 
 // Start server
