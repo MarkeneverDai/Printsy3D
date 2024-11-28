@@ -3,7 +3,12 @@ const multer = require('multer');
 const fs = require('fs');
 
 const app = express();
-const port = 3000;
+const cors = require('cors');
+
+app.use(cors({
+  origin: 'https://your-shopify-store.myshopify.com', // Replace with your actual Shopify domain
+}));
+const port = 3000; 
 
 // Set the price per gram (in cents)
 const pricePerGram = 5; // Adjust this value as needed (e.g., 5 cents per gram)
