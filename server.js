@@ -5,6 +5,9 @@ const fs = require('fs');
 const app = express();
 const port = 3000;
 
+// Set the price per gram (in cents)
+const pricePerGram = 5; // Adjust this value as needed (e.g., 5 cents per gram)
+
 // Configure multer for file uploads
 const upload = multer({
   dest: 'uploads/',
@@ -143,6 +146,10 @@ app.post('/upload', upload.single('file'), (req, res) => {
       totalWeight,
     } = calculateFilamentUsage(volume, infillDensity, wallThickness, topBottomThickness, filamentDensity, layerHeight);
 
+    // Calculate price based on filament weight
+    const priceInCents = totalWeight * pricePerGram; // Price in cents
+    const priceInDollars = (priceInCents / 100).toFixed(2); // Convert to dollars
+
     // Send the result
     res.send(`
       <h1>Filament Usage Calculation</h1>
@@ -152,6 +159,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
       <p><strong>Infill Volume:</strong> ${infillVolume.toFixed(2)} cm³ (Filament: ${infillWeight.toFixed(2)} g)</p>
       <p><strong>Total Filament Volume:</strong> ${totalVolume.toFixed(2)} cm³</p>
       <p><strong>Filament Usage:</strong> ${totalWeight.toFixed(2)} g</p>
+      <p><strong>Total Cost:</strong> $${priceInDollars}</p>
       <a href="/">Upload Another File</a>
     `);
 
