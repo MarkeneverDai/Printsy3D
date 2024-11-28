@@ -1,25 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
-const cors = require('cors'); // Only declare cors once
-
 const app = express();
-
-// Set up CORS configuration
-const allowedOrigins = [
-  'https://c7hfgm-03.myshopify.com', // Your actual Shopify store domain
-];
-
-app.use(cors({
-  origin: (origin, callback) => {
-    if (allowedOrigins.includes(origin) || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-}));
-
 const port = 3000;
 
 // Set the price per gram (in cents)
