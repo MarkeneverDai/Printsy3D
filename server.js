@@ -56,59 +56,40 @@ function calculateSTLVolume(buffer) {
 }
 
 // Calculate filament usage
-function calculateFilamentUsage(volume, infillDensity, wallThickness, topBottomThickness, filamentDensity, layerHeight) {
+function calculateFilamentUsage(volume, infillDensity, wallThickness, filamentDensity) {
   const infillVolume = volume * (infillDensity / 100);
   const wallVolume = wallThickness * (volume ** (2 / 3)); // Approximate wall volume
   const totalVolume = infillVolume + wallVolume;
 
   const totalWeight = totalVolume * filamentDensity; // Total filament weight in grams
 
-  return {
-    infillVolume,
-    wallVolume,
-    totalVolume,
-    totalWeight,
-  };
+  return totalWeight;
 }
 
-// Handle file upload and calculation (via Postman or third-party)
+// Handle file upload and calculate price
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
   const filePath = req.file.path;
-  const infillDensity = parseFloat(req.body.infill || 15);
-  const filamentDensity = parseFloat(req.body.material || 1.24); // Default: PLA (1.24 g/cm³)
-  const topBottomThickness = parseFloat(req.body.layers || 1.0); // Top/Bottom layer thickness in mm
+  const infillDensity = parseFloat(req.body.infill || 15); // Default 15% infill
+  const filamentDensity = parseFloat(req.body.material || 1.24); // Default PLA (1.24 g/cm³)
   const wallThickness = 2 * 0.4; // Default: 2 wall loops with 0.4 mm nozzle
-  const layerHeight = 0.2; // Default layer height in mm
 
   try {
     // Read STL file
     const buffer = fs.readFileSync(filePath);
     const volume = calculateSTLVolume(buffer); // STL volume in cm³
 
-    const {
-      infillVolume,
-      wallVolume,
-      totalVolume,
-      totalWeight,
-    } = calculateFilamentUsage(volume, infillDensity, wallThickness, topBottomThickness, filamentDensity, layerHeight);
+    const totalWeight = calculateFilamentUsage(volume, infillDensity, wallThickness, filamentDensity);
 
     // Calculate price based on filament weight
     const priceInCents = totalWeight * pricePerGram;
     const priceInDollars = (priceInCents / 100).toFixed(2); // Convert to dollars
 
-    // Respond with JSON (for API consumers)
-    res.json({
-      stlVolume: volume.toFixed(2),
-      infillVolume: infillVolume.toFixed(2),
-      wallVolume: wallVolume.toFixed(2),
-      totalVolume: totalVolume.toFixed(2),
-      totalWeight: totalWeight.toFixed(2),
-      price: `$${priceInDollars}`,
-    });
+    // Respond with only the price
+    res.json({ price: `$${priceInDollars}` });
 
     // Clean up uploaded file
     fs.unlinkSync(filePath);
@@ -118,19 +99,16 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   }
 });
 
-// Serve frontend (optional for Shopify-like form handling)
+// Serve frontend (optional)
 app.get('/', (req, res) => {
   res.send(`
-    <h1>STL Filament Calculator API</h1>
-    <p>This API calculates the filament cost based on STL file uploads.</p>
-    <p>Use <code>POST /api/upload</code> with the following parameters:</p>
+    <h1>STL Filament Cost Calculator</h1>
+    <p>Send a POST request to <code>/api/upload</code> with:</p>
     <ul>
       <li><strong>file:</strong> STL file (binary, required)</li>
       <li><strong>infill:</strong> Infill density (%) [default: 15]</li>
       <li><strong>material:</strong> Filament density (g/cm³) [default: PLA (1.24)]</li>
-      <li><strong>layers:</strong> Top/Bottom thickness (mm) [default: 1.0]</li>
     </ul>
-    <p>Send these parameters via Postman or any HTTP client to test.</p>
   `);
 });
 
