@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const app = express();
@@ -7,6 +8,13 @@ const port = process.env.PORT || 3000;
 
 // Set the price per gram (in cents)
 const pricePerGram = 5; // Adjust this value as needed
+
+// Configure CORS
+app.use(cors({
+  origin: '*', // Replace '*' with your Shopify store domain for better security
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+}));
 
 // Configure multer for file uploads
 const upload = multer({
