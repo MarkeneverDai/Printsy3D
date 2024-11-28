@@ -6,8 +6,18 @@ const cors = require('cors'); // Only declare cors once
 const app = express();
 
 // Set up CORS configuration
+const allowedOrigins = [
+  'https://c7hfgm-03.myshopify.com', // Your actual Shopify store domain
+];
+
 app.use(cors({
-  origin: 'https://your-shopify-store.myshopify.com', // Replace with your actual Shopify domain
+  origin: (origin, callback) => {
+    if (allowedOrigins.includes(origin) || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
 }));
 
 const port = 3000;
