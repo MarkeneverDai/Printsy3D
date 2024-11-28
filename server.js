@@ -11,7 +11,7 @@ const pricePerGram = 5; // Adjust this value as needed
 
 // Configure CORS
 app.use(cors({
-  origin: '*', // Replace '*' with your Shopify store domain for better security
+  origin: 'https://72a1-98-97-142-140.ngrok-free.app', // Replace with your ngrok URL
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
 }));
